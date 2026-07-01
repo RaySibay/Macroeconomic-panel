@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>China Free Liquidity Monitor</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Macro Market Dashboard</p>
+          <h1>China Free Liquidity vs MSCI China</h1>
+        </div>
+        <div class="status">
+          <span id="sourceBadge">Loading</span>
+          <time id="latestDate">--</time>
+        </div>
+      </header>
+
+      <section class="metrics" aria-label="Latest readings">
+        <article>
+          <span>自由流动性</span>
+          <strong id="latestLiquidity">--</strong>
+          <small>M1 - PPI - 工业增加值3M均值</small>
+        </article>
+        <article>
+          <span>MSCI China YoY</span>
+          <strong id="latestMsci">--</strong>
+          <small>默认可用 MCHI ETF 公开代理数据</small>
+        </article>
+        <article>
+          <span>方向信号</span>
+          <strong id="signalText">--</strong>
+          <small id="signalDetail">等待数据</small>
+        </article>
+      </section>
+
+      <section class="panel" aria-label="Chart panel">
+        <div class="panel-head">
+          <div>
+            <h2>领先指标对照</h2>
+            <p>左轴：MSCI China 年同比；右轴：中国自由流动性指标。</p>
+          </div>
+          <div class="segmented" role="group" aria-label="Date range">
+            <button type="button" data-range="all" class="active">All</button>
+            <button type="button" data-range="5y">5Y</button>
+            <button type="button" data-range="3y">3Y</button>
+            <button type="button" data-range="1y">1Y</button>
+          </div>
+        </div>
+
+        <div class="chart-wrap">
+          <svg id="chart" role="img" aria-label="Free liquidity and MSCI China chart"></svg>
+          <div id="tooltip" class="tooltip" hidden></div>
+        </div>
+
+        <div class="legend">
+          <span><i class="line red"></i>MSCI China YoY</span>
+          <span><i class="line blue"></i>China Free Liquidity</span>
+        </div>
+      </section>
+
+      <section class="table-section" aria-label="Recent rows">
+        <div class="panel-head compact">
+          <h2>最近数据</h2>
+          <button id="refreshButton" type="button">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>月份</th>
+                <th>M1 YoY</th>
+                <th>PPI YoY</th>
+                <th>工业3M</th>
+                <th>自由流动性</th>
+                <th>MSCI YoY</th>
+              </tr>
+            </thead>
+            <tbody id="rowsBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -8,7 +8,6 @@ const chart = document.querySelector("#chart");
 const tooltip = document.querySelector("#tooltip");
 const rowsBody = document.querySelector("#rowsBody");
 const refreshButton = document.querySelector("#refreshButton");
-const sourceBadge = document.querySelector("#sourceBadge");
 const latestDate = document.querySelector("#latestDate");
 const latestLiquidity = document.querySelector("#latestLiquidity");
 const latestMsci = document.querySelector("#latestMsci");
@@ -32,7 +31,6 @@ window.addEventListener("resize", () => renderChart(filteredRows()));
 await loadData();
 
 async function loadData() {
-  sourceBadge.textContent = "Loading";
   const response = await fetch("/api/series");
   if (!response.ok) throw new Error(`API ${response.status}`);
   const payload = await response.json();
@@ -60,7 +58,6 @@ function filteredRows() {
 
 function renderMeta() {
   const latest = [...state.rows].reverse().find((row) => row.freeLiquidity !== null || row.msciChinaYoy !== null);
-  sourceBadge.textContent = state.meta.source === "d1" ? "D1 Live" : "Sample";
   latestDate.textContent = latest ? monthFmt.format(new Date(`${latest.date}T00:00:00Z`)) : "--";
   latestLiquidity.textContent = formatPct(latest?.freeLiquidity);
   latestLiquidity.className = classFor(latest?.freeLiquidity);
@@ -107,8 +104,9 @@ function renderChart(rows) {
   }
 
   const xDomain = [Math.min(...dates), Math.max(...dates)];
-  const msciDomain = paddedDomain(msciValues, 15);
-  const liquidityDomain = paddedDomain(liquidityValues, 4);
+  let msciDomain = paddedDomain(msciValues, 15);
+  let liquidityDomain = paddedDomain(liquidityValues, 4);
+  [msciDomain, liquidityDomain] = alignZeroDomains(msciDomain, liquidityDomain);
   const x = (value) => margin.left + ((value - xDomain[0]) / Math.max(1, xDomain[1] - xDomain[0])) * innerWidth;
   const yLeft = (value) =>
     margin.top + (1 - (value - msciDomain[0]) / Math.max(1, msciDomain[1] - msciDomain[0])) * innerHeight;
@@ -207,6 +205,27 @@ function paddedDomain(values, pad) {
   const low = Math.min(...values, 0) - pad;
   const high = Math.max(...values, 0) + pad;
   return low === high ? [low - 1, high + 1] : [low, high];
+}
+
+function alignZeroDomains(leftDomain, rightDomain) {
+  const ratio = clamp((zeroRatio(leftDomain) + zeroRatio(rightDomain)) / 2, 0.2, 0.8);
+  return [domainForZeroRatio(leftDomain, ratio), domainForZeroRatio(rightDomain, ratio)];
+}
+
+function zeroRatio([min, max]) {
+  return max / Math.max(1e-9, max - min);
+}
+
+function domainForZeroRatio([min, max], ratio) {
+  const negativeSpan = Math.max(0.0001, Math.abs(Math.min(min, 0)));
+  const positiveSpan = Math.max(0.0001, Math.max(max, 0));
+  const requiredNegative = positiveSpan * (1 - ratio) / ratio;
+  const requiredPositive = negativeSpan * ratio / (1 - ratio);
+  return [-Math.max(negativeSpan, requiredNegative), Math.max(positiveSpan, requiredPositive)];
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function ticks([min, max], count) {

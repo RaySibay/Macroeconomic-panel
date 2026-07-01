@@ -82,12 +82,8 @@ h2 {
   font-size: 13px;
 }
 
-#sourceBadge {
-  padding: 5px 9px;
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  background: #eef4ee;
-  color: var(--green);
+.status time {
+  color: var(--ink);
   font-weight: 700;
 }
 
@@ -270,11 +266,11 @@ h2 {
 
 .legend {
   display: flex;
-  gap: 18px;
+  gap: 20px;
   flex-wrap: wrap;
   color: var(--muted);
-  font-size: 13px;
-  margin-top: 8px;
+  font-size: 14px;
+  margin: 4px 0 12px;
 }
 
 .legend span {

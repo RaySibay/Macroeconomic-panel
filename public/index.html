@@ -14,7 +14,7 @@
           <h1>China Free Liquidity vs MSCI China</h1>
         </div>
         <div class="status">
-          <span id="sourceBadge">Loading</span>
+          <span>最新月份</span>
           <time id="latestDate">--</time>
         </div>
       </header>
@@ -51,14 +51,14 @@
           </div>
         </div>
 
+        <div class="legend" aria-label="Chart legend">
+          <span><i class="line red"></i>红线：MSCI China YoY，左轴</span>
+          <span><i class="line blue"></i>蓝线：China Free Liquidity，右轴</span>
+        </div>
+
         <div class="chart-wrap">
           <svg id="chart" role="img" aria-label="Free liquidity and MSCI China chart"></svg>
           <div id="tooltip" class="tooltip" hidden></div>
-        </div>
-
-        <div class="legend">
-          <span><i class="line red"></i>MSCI China YoY</span>
-          <span><i class="line blue"></i>China Free Liquidity</span>
         </div>
       </section>
 

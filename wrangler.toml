@@ -10,4 +10,4 @@ not_found_handling = "single-page-application"
 [[d1_databases]]
 binding = "DB"
 database_name = "china-liquidity"
-database_id = "replace-with-your-d1-database-id"
+database_id = "cdc82b31-415e-4870-92b8-7972a5c560c0"

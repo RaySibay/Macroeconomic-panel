@@ -22,6 +22,18 @@ test("computes 3-month industrial production average and free liquidity", () => 
   assert.equal(rows[2].freeLiquidity, 3);
 });
 
+test("skips missing industrial production values in the 3-observation average", () => {
+  const rows = computeFreeLiquidityRows([
+    { date: "2025-12-01", m1Yoy: 8, ppiYoy: 1, industrialProductionYoy: 3 },
+    { date: "2026-01-01", m1Yoy: 9, ppiYoy: 1, industrialProductionYoy: 6 },
+    { date: "2026-02-01", m1Yoy: 10, ppiYoy: 1, industrialProductionYoy: null },
+    { date: "2026-03-01", m1Yoy: 11, ppiYoy: 1, industrialProductionYoy: 9 }
+  ]);
+
+  assert.equal(rows[3].industrialProductionYoy3m, 6);
+  assert.equal(rows[3].freeLiquidity, 4);
+});
+
 test("computes monthly year-over-year percentage change", () => {
   const prices = computeMonthlyYoy([
     { date: "2025-01-31", value: 100 },

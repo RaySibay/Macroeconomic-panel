@@ -3,8 +3,10 @@
 静态前端 + Cloudflare Workers + D1 的中国自由流动性监测面板。指标逻辑参考研报口径：
 
 ```text
-China Free Liquidity = M1 YoY - PPI YoY - 3个月工业增加值 YoY 移动平均
+China Free Liquidity = M1 YoY - PPI YoY - 最近3个可用工业增加值 YoY 观测值移动平均
 ```
+
+工业增加值在春节前后可能缺少单月观测，计算 3 个观测值均值时会跳过缺失月份，避免单个空值导致后续多个月折线断开。
 
 前端展示自由流动性与 MSCI China 年同比走势，并在下方展示中国央行黄金储备月变化、SPDR 黄金 ETF 持仓日变化。由于 MSCI 指数本身通常涉及授权，采集脚本默认用 `MCHI` ETF 作为公开代理；如果你有正式 MSCI China 指数数据，可以用 `--msci-csv` 提供 CSV。
 
@@ -50,6 +52,12 @@ npx wrangler d1 create china-liquidity
 
 ```powershell
 npx wrangler d1 execute china-liquidity --file=./schema.sql
+```
+
+将初始化表同步到云端：
+
+```powershell
+npx wrangler d1 execute china-liquidity --remote --file=./schema.sql
 ```
 
 后续如果已有 D1 数据库，也可以再次执行同一条命令补齐新增表；`CREATE TABLE IF NOT EXISTS` 不会删除已有数据。

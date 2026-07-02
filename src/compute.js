@@ -52,9 +52,10 @@ export function computeFreeLiquidityRows(rawRows) {
 
   return rows.map((row, index) => {
     const ipWindow = rows
-      .slice(Math.max(0, index - 2), index + 1)
+      .slice(0, index + 1)
       .map((item) => item.industrialProductionYoy)
-      .filter((value) => value !== null);
+      .filter((value) => value !== null)
+      .slice(-3);
     const industrialProductionYoy3m =
       ipWindow.length === 3 ? ipWindow.reduce((sum, value) => sum + value, 0) / 3 : null;
     const freeLiquidity =

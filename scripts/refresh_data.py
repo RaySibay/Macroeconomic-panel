@@ -128,13 +128,49 @@ def fetch_macro_data() -> pd.DataFrame:
     import akshare as ak
 
     m1 = normalize_akshare_frame(ak.macro_china_money_supply(), M1_SPEC).rename(columns={"value": "m1Yoy"})
-    ppi = normalize_akshare_frame(ak.macro_china_ppi_yearly(), PPI_SPEC).rename(columns={"value": "ppiYoy"})
-    ip = normalize_akshare_frame(ak.macro_china_industrial_production_yoy(), IP_SPEC).rename(
+    ppi = normalize_monthly_ppi(ak.macro_china_ppi()).rename(columns={"value": "ppiYoy"})
+    ip = normalize_monthly_industrial_production(ak.macro_china_gyzjz()).rename(
         columns={"value": "industrialProductionYoy"}
     )
 
     macro = m1.merge(ppi, how="outer", on="date").merge(ip, how="outer", on="date").sort_values("date")
     return macro.drop_duplicates(subset=["date"], keep="last")
+
+
+def normalize_monthly_ppi(frame: pd.DataFrame) -> pd.DataFrame:
+    date_col = pick_column(frame.columns, ("月份", "date", "month", "time"))
+    value_col = pick_column(frame.columns, ("当月同比增长", "PPI.*同比", "同比增长", "value", "actual"))
+
+    result = frame[[date_col, value_col]].copy()
+    result.columns = ["date", "value"]
+    result["date"] = result["date"].map(month_start)
+    result["value"] = result["value"].map(parse_number)
+    result = result.dropna(subset=["date", "value"]).sort_values("date")
+    if result.empty:
+        raise RuntimeError(f"PPI同比 could not be normalized from columns: {list(frame.columns)}")
+    return result
+
+
+def normalize_monthly_industrial_production(frame: pd.DataFrame) -> pd.DataFrame:
+    date_col = pick_column(frame.columns, ("月份", "date", "month", "time"))
+    value_col = pick_column(frame.columns, ("同比增长", "工业增加值.*同比", "value", "actual"), ("累计",))
+    cumulative_col = pick_column(frame.columns, ("累计增长", "累计.*同比", "cumulative"))
+
+    result = frame[[date_col, value_col, cumulative_col]].copy()
+    result.columns = ["date", "value", "cumulativeValue"]
+    result["date"] = result["date"].map(month_start)
+    result["value"] = result["value"].map(parse_number)
+    result["cumulativeValue"] = result["cumulativeValue"].map(parse_number)
+
+    february_mask = result["date"].map(lambda value: value is not None and value.month == 2)
+    result.loc[february_mask & result["value"].isna(), "value"] = result.loc[
+        february_mask & result["value"].isna(), "cumulativeValue"
+    ]
+
+    result = result.drop(columns=["cumulativeValue"]).dropna(subset=["date", "value"]).sort_values("date")
+    if result.empty:
+        raise RuntimeError(f"工业增加值同比 could not be normalized from columns: {list(frame.columns)}")
+    return result
 
 
 def build_china_gold_reserve_rows(args: argparse.Namespace) -> list[dict]:

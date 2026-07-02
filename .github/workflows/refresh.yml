@@ -3,7 +3,8 @@ name: Refresh China free liquidity data
 on:
   workflow_dispatch:
   schedule:
-    - cron: "15 1 * * *"
+    # 17:30 Beijing time, Monday-Friday.
+    - cron: "30 9 * * 1-5"
 
 jobs:
   refresh:

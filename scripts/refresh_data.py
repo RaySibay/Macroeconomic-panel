@@ -42,13 +42,31 @@ IP_SPEC = SeriesSpec(
     reject_patterns=("预测", "前值", "forecast", "previous"),
 )
 
+CHINA_GOLD_RESERVE_SPEC = SeriesSpec(
+    name="中国央行黄金储备",
+    date_patterns=("月份", "日期", "统计时间", "date", "month", "time"),
+    value_patterns=("黄金.*储备", "黄金", "万盎司", "value", "reserve"),
+    reject_patterns=("同比", "环比", "预测", "前值", "forecast", "previous"),
+)
+
+SPDR_GOLD_ETF_SPEC = SeriesSpec(
+    name="SPDR黄金ETF持仓",
+    date_patterns=("日期", "月份", "统计时间", "date", "time"),
+    value_patterns=("持仓", "总库存", "库存", "吨", "ton", "tonne", "value", "spdr"),
+    reject_patterns=("变动", "增减", "涨跌", "change", "pct", "%"),
+)
+
 
 def main() -> None:
     args = parse_args()
     rows = build_rows(args)
+    china_gold_reserve_rows = build_china_gold_reserve_rows(args)
+    spdr_gold_etf_rows = build_spdr_gold_etf_rows(args)
     payload = {
         "message": f"refresh_data.py {datetime.now(timezone.utc).isoformat()}",
         "rows": rows,
+        "chinaGoldReserveRows": china_gold_reserve_rows,
+        "spdrGoldEtfRows": spdr_gold_etf_rows,
     }
 
     if args.out:
@@ -71,6 +89,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--msci-csv", help="CSV containing official/licensed MSCI China index levels")
     parser.add_argument("--msci-symbol", default="MCHI", help="Yahoo Finance symbol used as public proxy when no CSV is supplied")
     parser.add_argument("--start", default="2003-01-01", help="Earliest month to include")
+    parser.add_argument(
+        "--gold-start",
+        default=months_ago_start(60),
+        help="Earliest China gold reserve month to include; defaults to the latest 60 months",
+    )
+    parser.add_argument(
+        "--spdr-start",
+        default=months_ago_start(24),
+        help="Earliest SPDR gold ETF day to include; defaults to the latest 24 months",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Do not POST to Worker")
     return parser.parse_args()
 
@@ -109,15 +137,60 @@ def fetch_macro_data() -> pd.DataFrame:
     return macro.drop_duplicates(subset=["date"], keep="last")
 
 
-def normalize_akshare_frame(frame: pd.DataFrame, spec: SeriesSpec) -> pd.DataFrame:
+def build_china_gold_reserve_rows(args: argparse.Namespace) -> list[dict]:
+    import akshare as ak
+
+    gold = normalize_akshare_frame(ak.macro_china_foreign_exchange_gold(), CHINA_GOLD_RESERVE_SPEC).rename(
+        columns={"value": "reserve10kOz"}
+    )
+    gold = gold.drop_duplicates(subset=["date"], keep="last").sort_values("date")
+    gold["monthlyChange10kOz"] = gold["reserve10kOz"].diff()
+    gold = gold[gold["date"] >= month_start(args.gold_start)]
+    rows = []
+    for item in gold.to_dict(orient="records"):
+        rows.append(
+            {
+                "date": item["date"].strftime("%Y-%m-01"),
+                "reserve10kOz": clean_float(item.get("reserve10kOz")),
+                "monthlyChange10kOz": clean_float(item.get("monthlyChange10kOz")),
+            }
+        )
+    return rows
+
+
+def build_spdr_gold_etf_rows(args: argparse.Namespace) -> list[dict]:
+    import akshare as ak
+
+    spdr = normalize_akshare_frame(ak.macro_cons_gold(), SPDR_GOLD_ETF_SPEC, date_mapper=day_start).rename(
+        columns={"value": "holdingTonnes"}
+    )
+    spdr = spdr.drop_duplicates(subset=["date"], keep="last").sort_values("date")
+    spdr["dailyChangeTonnes"] = spdr["holdingTonnes"].diff()
+    spdr = spdr[spdr["date"] >= day_start(args.spdr_start)]
+    rows = []
+    for item in spdr.to_dict(orient="records"):
+        rows.append(
+            {
+                "date": item["date"].strftime("%Y-%m-%d"),
+                "holdingTonnes": clean_float(item.get("holdingTonnes")),
+                "dailyChangeTonnes": clean_float(item.get("dailyChangeTonnes")),
+            }
+        )
+    return rows
+
+
+def normalize_akshare_frame(frame: pd.DataFrame, spec: SeriesSpec, date_mapper=None) -> pd.DataFrame:
     if frame.empty:
         raise RuntimeError(f"{spec.name} returned an empty frame")
+
+    if date_mapper is None:
+        date_mapper = month_start
 
     date_col = pick_column(frame.columns, spec.date_patterns)
     value_col = pick_column(frame.columns, spec.value_patterns, spec.reject_patterns)
     result = frame[[date_col, value_col]].copy()
     result.columns = ["date", "value"]
-    result["date"] = result["date"].map(month_start)
+    result["date"] = result["date"].map(date_mapper)
     result["value"] = result["value"].map(parse_number)
     result = result.dropna(subset=["date", "value"]).sort_values("date")
 
@@ -200,6 +273,23 @@ def month_start(value) -> pd.Timestamp | None:
             return None
         parsed = pd.Timestamp(year=int(match.group(1)), month=int(match.group(2)), day=1)
     return pd.Timestamp(year=parsed.year, month=parsed.month, day=1)
+
+
+def day_start(value) -> pd.Timestamp | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    parsed = pd.to_datetime(str(value).strip().replace("/", "-"), errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return pd.Timestamp(year=parsed.year, month=parsed.month, day=parsed.day)
+
+
+def months_ago_start(months: int) -> str:
+    now = datetime.now(timezone.utc)
+    month_index = now.year * 12 + now.month - 1 - months
+    year = month_index // 12
+    month = month_index % 12 + 1
+    return f"{year:04d}-{month:02d}-01"
 
 
 def parse_number(value) -> float | None:

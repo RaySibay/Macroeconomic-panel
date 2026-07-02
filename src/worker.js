@@ -1,5 +1,5 @@
 import { computeFreeLiquidityRows, round, toMonth } from "./compute.js";
-import { SAMPLE_ROWS } from "./sample-data.js";
+import { SAMPLE_CHINA_GOLD_RESERVE_ROWS, SAMPLE_ROWS, SAMPLE_SPDR_GOLD_ETF_ROWS } from "./sample-data.js";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
@@ -49,6 +49,8 @@ async function getSeries(env, url) {
   const to = toMonth(url.searchParams.get("to"));
   let source = "sample";
   let rows = SAMPLE_ROWS;
+  let chinaGoldReserveRows = SAMPLE_CHINA_GOLD_RESERVE_ROWS;
+  let spdrGoldEtfRows = SAMPLE_SPDR_GOLD_ETF_ROWS;
 
   if (env.DB) {
     const filters = [];
@@ -85,6 +87,36 @@ async function getSeries(env, url) {
       source = "d1";
       rows = result.results.map(cleanRow);
     }
+
+    const chinaGold = await optionalAll(
+      env.DB.prepare(
+      `SELECT
+        obs_date AS date,
+        reserve_10k_oz AS reserve10kOz,
+        monthly_change_10k_oz AS monthlyChange10kOz,
+        updated_at AS updatedAt
+      FROM china_gold_reserve_points
+      ORDER BY obs_date`
+      )
+    );
+    if (chinaGold.results?.length) {
+      chinaGoldReserveRows = chinaGold.results.map(cleanChinaGoldReserveRow);
+    }
+
+    const spdrGold = await optionalAll(
+      env.DB.prepare(
+      `SELECT
+        obs_date AS date,
+        holding_tonnes AS holdingTonnes,
+        daily_change_tonnes AS dailyChangeTonnes,
+        updated_at AS updatedAt
+      FROM spdr_gold_etf_points
+      ORDER BY obs_date`
+      )
+    );
+    if (spdrGold.results?.length) {
+      spdrGoldEtfRows = spdrGold.results.map(cleanSpdrGoldEtfRow);
+    }
   }
 
   if (source === "sample") {
@@ -95,6 +127,8 @@ async function getSeries(env, url) {
 
   return {
     rows,
+    chinaGoldReserveRows,
+    spdrGoldEtfRows,
     meta: {
       source,
       latestDate: latest?.date ?? null,
@@ -116,7 +150,14 @@ async function handleIngest(request, env) {
 
   const payload = await request.json();
   const incomingRows = Array.isArray(payload.rows) ? payload.rows : [];
-  if (!incomingRows.length) return json({ ok: false, error: "Payload must include rows[]" }, { status: 400 });
+  const chinaGoldReserveRows = Array.isArray(payload.chinaGoldReserveRows) ? payload.chinaGoldReserveRows : [];
+  const spdrGoldEtfRows = Array.isArray(payload.spdrGoldEtfRows) ? payload.spdrGoldEtfRows : [];
+  if (!incomingRows.length && !chinaGoldReserveRows.length && !spdrGoldEtfRows.length) {
+    return json(
+      { ok: false, error: "Payload must include rows[], chinaGoldReserveRows[], or spdrGoldEtfRows[]" },
+      { status: 400 }
+    );
+  }
 
   const computed = computeFreeLiquidityRows(incomingRows);
   const statements = computed.map((row) =>
@@ -153,23 +194,62 @@ async function handleIngest(request, env) {
     )
   );
 
-  await env.DB.batch(statements);
+  statements.push(...chinaGoldReserveRows.map((row) => chinaGoldReserveStatement(env, row)));
+  statements.push(...spdrGoldEtfRows.map((row) => spdrGoldEtfStatement(env, row)));
+
+  for (const chunk of chunks(statements, 100)) {
+    await env.DB.batch(chunk);
+  }
 
   const latestDate = computed.at(-1)?.date ?? null;
   await env.DB.prepare(
     "INSERT INTO refresh_log (status, message, rows_received, data_through) VALUES (?, ?, ?, ?)"
   )
-    .bind("ok", payload.message ?? "ingest completed", computed.length, latestDate)
+    .bind("ok", payload.message ?? "ingest completed", statements.length, latestDate)
     .run();
 
   return json(
     {
       ok: true,
       rowsReceived: computed.length,
-      latestDate
+      chinaGoldReserveRowsReceived: chinaGoldReserveRows.length,
+      spdrGoldEtfRowsReceived: spdrGoldEtfRows.length,
+      latestDate,
+      latestChinaGoldReserveDate: chinaGoldReserveRows.at(-1)?.date ?? null,
+      latestSpdrGoldEtfDate: spdrGoldEtfRows.at(-1)?.date ?? null
     },
     { headers: { "cache-control": "no-store" } }
   );
+}
+
+function chinaGoldReserveStatement(env, row) {
+  return env.DB.prepare(
+    `INSERT INTO china_gold_reserve_points (
+      obs_date,
+      reserve_10k_oz,
+      monthly_change_10k_oz,
+      updated_at
+    ) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(obs_date) DO UPDATE SET
+      reserve_10k_oz = excluded.reserve_10k_oz,
+      monthly_change_10k_oz = excluded.monthly_change_10k_oz,
+      updated_at = CURRENT_TIMESTAMP`
+  ).bind(row.date, row.reserve10kOz ?? null, row.monthlyChange10kOz ?? null);
+}
+
+function spdrGoldEtfStatement(env, row) {
+  return env.DB.prepare(
+    `INSERT INTO spdr_gold_etf_points (
+      obs_date,
+      holding_tonnes,
+      daily_change_tonnes,
+      updated_at
+    ) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(obs_date) DO UPDATE SET
+      holding_tonnes = excluded.holding_tonnes,
+      daily_change_tonnes = excluded.daily_change_tonnes,
+      updated_at = CURRENT_TIMESTAMP`
+  ).bind(row.date, row.holdingTonnes ?? null, row.dailyChangeTonnes ?? null);
 }
 
 function cleanRow(row) {
@@ -184,4 +264,40 @@ function cleanRow(row) {
     msciChinaYoy: round(row.msciChinaYoy),
     updatedAt: row.updatedAt
   };
+}
+
+function cleanChinaGoldReserveRow(row) {
+  return {
+    date: row.date,
+    reserve10kOz: round(row.reserve10kOz),
+    monthlyChange10kOz: round(row.monthlyChange10kOz),
+    updatedAt: row.updatedAt
+  };
+}
+
+function cleanSpdrGoldEtfRow(row) {
+  return {
+    date: row.date,
+    holdingTonnes: round(row.holdingTonnes),
+    dailyChangeTonnes: round(row.dailyChangeTonnes),
+    updatedAt: row.updatedAt
+  };
+}
+
+function chunks(items, size) {
+  const result = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
+}
+
+async function optionalAll(statement) {
+  try {
+    return await statement.all();
+  } catch (error) {
+    const message = String(error?.message ?? error).toLowerCase();
+    if (message.includes("no such table")) return { results: [] };
+    throw error;
+  }
 }

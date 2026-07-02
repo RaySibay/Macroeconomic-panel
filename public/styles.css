@@ -128,6 +128,16 @@ h2 {
   margin-top: 16px;
 }
 
+.gold-stack {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.gold-panel {
+  margin-top: 0;
+}
+
 .panel-head {
   align-items: center;
   margin-bottom: 14px;
@@ -150,6 +160,14 @@ h2 {
   border-radius: 8px;
   overflow: hidden;
   background: #f8faf7;
+}
+
+.gold-range {
+  grid-template-columns: repeat(3, 56px);
+}
+
+.spdr-range {
+  grid-template-columns: repeat(4, 64px);
 }
 
 .segmented button,
@@ -181,7 +199,20 @@ h2 {
   min-height: 360px;
 }
 
+.mini-chart-wrap {
+  width: 100%;
+  height: min(46vh, 420px);
+  min-height: 320px;
+}
+
 #chart {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#chinaGoldChart,
+#spdrGoldChart {
   width: 100%;
   height: 100%;
   display: block;
@@ -240,7 +271,9 @@ h2 {
   stroke-dasharray: 4 4;
 }
 
-#chart .overlay {
+#chart .overlay,
+#chinaGoldChart .overlay,
+#spdrGoldChart .overlay {
   fill: transparent;
   cursor: crosshair;
 }
@@ -251,8 +284,77 @@ h2 {
   text-anchor: middle;
 }
 
+#chinaGoldChart .grid,
+#spdrGoldChart .grid {
+  stroke: #e5e8e1;
+  stroke-width: 1;
+}
+
+#chinaGoldChart .zero,
+#spdrGoldChart .zero {
+  stroke: #4b524f;
+  stroke-width: 1.1;
+}
+
+#chinaGoldChart .axis,
+#spdrGoldChart .axis {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+#chinaGoldChart .left-label,
+#spdrGoldChart .left-label {
+  text-anchor: end;
+}
+
+#chinaGoldChart .date-label,
+#spdrGoldChart .date-label {
+  text-anchor: middle;
+}
+
+#chinaGoldChart .bar-positive,
+#spdrGoldChart .bar-positive {
+  fill: rgba(24, 114, 92, 0.75);
+}
+
+#chinaGoldChart .bar-negative,
+#spdrGoldChart .bar-negative {
+  fill: rgba(198, 40, 40, 0.75);
+}
+
+#chinaGoldChart .empty,
+#spdrGoldChart .empty {
+  fill: var(--muted);
+  font-size: 14px;
+  text-anchor: middle;
+}
+
+#chinaGoldChart .hover-line,
+#spdrGoldChart .hover-line {
+  stroke: #202124;
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+#spdrGoldChart .crosshair-line {
+  stroke: #1f2933;
+  stroke-opacity: 0.78;
+}
+
+#spdrGoldChart .crosshair-label-bg {
+  fill: rgba(32, 33, 36, 0.92);
+  rx: 4;
+}
+
+#spdrGoldChart .crosshair-label-text {
+  fill: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .tooltip {
-  position: absolute;
+  position: fixed;
+  z-index: 20;
   min-width: 190px;
   padding: 10px 12px;
   border-radius: 8px;
@@ -364,6 +466,14 @@ tbody tr:last-child td {
 
   .segmented {
     width: 100%;
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .gold-range {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .spdr-range {
     grid-template-columns: repeat(4, 1fr);
   }
 

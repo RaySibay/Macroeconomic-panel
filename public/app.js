@@ -1,10 +1,16 @@
 const state = {
   rows: [],
+  chinaGoldReserveRows: [],
+  spdrGoldEtfRows: [],
   meta: {},
-  range: "all"
+  range: "all",
+  chinaGoldRange: "5y",
+  spdrGoldRange: "2y"
 };
 
 const chart = document.querySelector("#chart");
+const chinaGoldChart = document.querySelector("#chinaGoldChart");
+const spdrGoldChart = document.querySelector("#spdrGoldChart");
 const tooltip = document.querySelector("#tooltip");
 const rowsBody = document.querySelector("#rowsBody");
 const refreshButton = document.querySelector("#refreshButton");
@@ -25,8 +31,31 @@ document.querySelectorAll("[data-range]").forEach((button) => {
   });
 });
 
+document.querySelectorAll("[data-china-gold-range]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.chinaGoldRange = button.dataset.chinaGoldRange;
+    document
+      .querySelectorAll("[data-china-gold-range]")
+      .forEach((item) => item.classList.toggle("active", item === button));
+    renderGoldCharts();
+  });
+});
+
+document.querySelectorAll("[data-spdr-gold-range]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.spdrGoldRange = button.dataset.spdrGoldRange;
+    document
+      .querySelectorAll("[data-spdr-gold-range]")
+      .forEach((item) => item.classList.toggle("active", item === button));
+    renderGoldCharts();
+  });
+});
+
 refreshButton.addEventListener("click", () => loadData());
-window.addEventListener("resize", () => renderChart(filteredRows()));
+window.addEventListener("resize", () => {
+  renderChart(filteredRows());
+  renderGoldCharts();
+});
 
 await loadData();
 
@@ -35,6 +64,8 @@ async function loadData() {
   if (!response.ok) throw new Error(`API ${response.status}`);
   const payload = await response.json();
   state.rows = payload.rows ?? [];
+  state.chinaGoldReserveRows = payload.chinaGoldReserveRows ?? [];
+  state.spdrGoldEtfRows = payload.spdrGoldEtfRows ?? [];
   state.meta = payload.meta ?? {};
   render();
 }
@@ -43,6 +74,7 @@ function render() {
   const rows = filteredRows();
   renderMeta();
   renderChart(rows);
+  renderGoldCharts();
   renderTable(rows);
 }
 
@@ -151,12 +183,12 @@ function renderChart(rows) {
     hoverLine.setAttribute("x1", px);
     hoverLine.setAttribute("x2", px);
     hoverLine.setAttribute("visibility", "visible");
-    tooltip.hidden = false;
-    tooltip.style.left = `${Math.min(bounds.width - 210, Math.max(8, event.clientX - bounds.left + 12))}px`;
-    tooltip.style.top = `${Math.max(8, event.clientY - bounds.top - 72)}px`;
-    tooltip.innerHTML = `<strong>${row.date.slice(0, 7)}</strong><br>自由流动性：${formatPct(
-      row.freeLiquidity
-    )}<br>MSCI YoY：${formatPct(row.msciChinaYoy)}`;
+    showTooltip(
+      event,
+      `<strong>${row.date.slice(0, 7)}</strong><br>自由流动性：${formatPct(row.freeLiquidity)}<br>MSCI YoY：${formatPct(
+        row.msciChinaYoy
+      )}`
+    );
   });
   overlay.addEventListener("mouseleave", () => {
     hoverLine.setAttribute("visibility", "hidden");
@@ -179,6 +211,105 @@ function renderTable(rows) {
       </tr>`
     )
     .join("");
+}
+
+function renderGoldCharts() {
+  renderChangeChart(chinaGoldChart, limitByMonths(state.chinaGoldReserveRows, monthsForRange(state.chinaGoldRange)), {
+    key: "monthlyChange10kOz",
+    unit: "万盎司",
+    tickCount: 5,
+    xTickCount: 5,
+    dateLabel: (row) => row.date.slice(0, 7),
+    hover: "tooltip",
+    valueLabel: "月变化",
+    secondaryKey: "reserve10kOz",
+    secondaryLabel: "黄金储备",
+    secondaryUnit: "万盎司"
+  });
+
+  renderChangeChart(spdrGoldChart, limitByMonths(state.spdrGoldEtfRows, monthsForRange(state.spdrGoldRange)), {
+    key: "dailyChangeTonnes",
+    unit: "吨",
+    tickCount: 5,
+    xTickCount: 5,
+    dateLabel: (row) => row.date.slice(0, 7),
+    hover: "crosshair"
+  });
+}
+
+function renderChangeChart(svg, rows, options) {
+  const width = svg.clientWidth || 900;
+  const height = svg.clientHeight || 360;
+  const margin = { top: 14, right: 14, bottom: 42, left: 52 };
+  const innerWidth = Math.max(1, width - margin.left - margin.right);
+  const innerHeight = Math.max(1, height - margin.top - margin.bottom);
+  const items = rows
+    .map((row) => ({
+      ...row,
+      time: new Date(`${row.date}T00:00:00Z`).getTime(),
+      value: row[options.key]
+    }))
+    .filter((row) => Number.isFinite(row.time) && isNum(row.value));
+
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.innerHTML = "";
+
+  if (!items.length) {
+    text(svg, width / 2, height / 2, "暂无数据", "empty");
+    return;
+  }
+
+  const xDomain = [Math.min(...items.map((row) => row.time)), Math.max(...items.map((row) => row.time))];
+  const yDomain = autoChangeDomain(items.map((row) => row.value));
+  const x = (value) => margin.left + ((value - xDomain[0]) / Math.max(1, xDomain[1] - xDomain[0])) * innerWidth;
+  const y = (value) =>
+    margin.top + (1 - (value - yDomain[0]) / Math.max(1, yDomain[1] - yDomain[0])) * innerHeight;
+  const g = group(svg, "plot");
+
+  for (const tick of ticks(yDomain, options.tickCount)) {
+    const py = y(tick);
+    line(g, margin.left, py, width - margin.right, py, "grid");
+    text(g, margin.left - 8, py + 4, fmt.format(tick), "axis left-label");
+  }
+
+  const zeroY = y(0);
+  if (zeroY >= margin.top && zeroY <= height - margin.bottom) {
+    line(g, margin.left, zeroY, width - margin.right, zeroY, "zero");
+  }
+
+  const xTicks = pickTicks(items, width < 520 ? 4 : options.xTickCount);
+  for (const row of xTicks) {
+    const px = x(row.time);
+    text(g, px, height - margin.bottom + 24, options.dateLabel(row), "axis date-label");
+  }
+
+  const stepWidth = innerWidth / Math.max(1, items.length);
+  const barWidth = Math.max(1, Math.min(9, stepWidth * 0.7));
+  for (const row of items) {
+    const px = x(row.time) - barWidth / 2;
+    const py = y(Math.max(0, row.value));
+    const barHeight = Math.max(1, Math.abs(y(row.value) - zeroY));
+    const bar = rect(g, px, py, barWidth, barHeight, row.value >= 0 ? "bar-positive" : "bar-negative");
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = `${row.date}: ${fmt.format(row.value)}${options.unit}`;
+    bar.appendChild(title);
+  }
+
+  addChangeChartHover(svg, g, items, { width, height, margin, innerWidth, innerHeight, xDomain, x, y, options });
+}
+
+function limitByMonths(rows, months) {
+  const latest = rows.at(-1)?.date;
+  if (!latest) return [];
+  const cutoff = new Date(`${latest}T00:00:00Z`);
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - months);
+  return rows.filter((row) => new Date(`${row.date}T00:00:00Z`) >= cutoff);
+}
+
+function monthsForRange(range) {
+  if (range.endsWith("y")) return Number(range.replace("y", "")) * 12;
+  if (range.endsWith("m")) return Number(range.replace("m", ""));
+  return 60;
 }
 
 function path(parent, rows, x, y, key, className) {
@@ -205,6 +336,14 @@ function paddedDomain(values, pad) {
   const low = Math.min(...values, 0) - pad;
   const high = Math.max(...values, 0) + pad;
   return low === high ? [low - 1, high + 1] : [low, high];
+}
+
+function autoChangeDomain(values) {
+  const low = Math.min(...values, 0);
+  const high = Math.max(...values, 0);
+  if (low === high) return [low - 1, high + 1];
+  const pad = Math.max((high - low) * 0.12, 0.5);
+  return [low - pad, high + pad];
 }
 
 function alignZeroDomains(leftDomain, rightDomain) {
@@ -256,6 +395,127 @@ function nearest(rows, target) {
     const distance = Math.abs(new Date(`${row.date}T00:00:00Z`).getTime() - target);
     return distance < best.distance ? { row, distance } : best;
   }, { row: rows[0], distance: Infinity }).row;
+}
+
+function addChangeChartHover(svg, g, items, chartState) {
+  const { width, height, margin, innerWidth, innerHeight, xDomain, x, y, options } = chartState;
+  if (options.hover === "tooltip") {
+    const hoverLine = line(g, 0, margin.top, 0, height - margin.bottom, "hover-line");
+    hoverLine.setAttribute("visibility", "hidden");
+    const overlay = rect(g, margin.left, margin.top, innerWidth, innerHeight, "overlay");
+    overlay.addEventListener("mousemove", (event) => {
+      const row = nearestBySvgX(svg, event, width, margin, innerWidth, xDomain, items);
+      const px = x(row.time);
+      hoverLine.setAttribute("x1", px);
+      hoverLine.setAttribute("x2", px);
+      hoverLine.setAttribute("visibility", "visible");
+      const secondary = options.secondaryKey
+        ? `<br>${options.secondaryLabel}：${formatUnit(row[options.secondaryKey], options.secondaryUnit)}`
+        : "";
+      showTooltip(
+        event,
+        `<strong>${row.date.slice(0, 7)}</strong><br>${options.valueLabel}：${formatUnit(
+          row.value,
+          options.unit
+        )}${secondary}`
+      );
+    });
+    overlay.addEventListener("mouseleave", () => {
+      hoverLine.setAttribute("visibility", "hidden");
+      tooltip.hidden = true;
+    });
+    return;
+  }
+
+  if (options.hover === "crosshair") {
+    const verticalLine = line(g, 0, margin.top, 0, height - margin.bottom, "hover-line crosshair-line");
+    const horizontalLine = line(g, margin.left, 0, width - margin.right, 0, "hover-line crosshair-line");
+    const xLabel = axisLabel(g, 0, height - margin.bottom + 23, "", "x-axis-value");
+    const yLabel = axisLabel(g, margin.left + 6, 0, "", "y-axis-value");
+    [verticalLine, horizontalLine, xLabel, yLabel].forEach((el) => el.setAttribute("visibility", "hidden"));
+
+    const overlay = rect(g, margin.left, margin.top, innerWidth, innerHeight, "overlay");
+    overlay.addEventListener("mousemove", (event) => {
+      const row = nearestBySvgX(svg, event, width, margin, innerWidth, xDomain, items);
+      const px = x(row.time);
+      const py = y(row.value);
+      verticalLine.setAttribute("x1", px);
+      verticalLine.setAttribute("x2", px);
+      horizontalLine.setAttribute("y1", py);
+      horizontalLine.setAttribute("y2", py);
+      setAxisLabel(xLabel, clamp(px, margin.left + 42, width - margin.right - 42), height - margin.bottom + 24, row.date);
+      setAxisLabel(yLabel, margin.left + 6, clamp(py, margin.top + 11, height - margin.bottom - 11), formatUnit(row.value, options.unit));
+      [verticalLine, horizontalLine, xLabel, yLabel].forEach((el) => el.setAttribute("visibility", "visible"));
+    });
+    overlay.addEventListener("mouseleave", () => {
+      [verticalLine, horizontalLine, xLabel, yLabel].forEach((el) => el.setAttribute("visibility", "hidden"));
+    });
+  }
+}
+
+function nearestBySvgX(svg, event, width, margin, innerWidth, xDomain, items) {
+  const bounds = svg.getBoundingClientRect();
+  const sx = ((event.clientX - bounds.left) / bounds.width) * width;
+  const ratio = clamp((sx - margin.left) / innerWidth, 0, 1);
+  const target = xDomain[0] + ratio * (xDomain[1] - xDomain[0]);
+  return nearestTime(items, target);
+}
+
+function nearestTime(rows, target) {
+  return rows.reduce((best, row) => {
+    const distance = Math.abs(row.time - target);
+    return distance < best.distance ? { row, distance } : best;
+  }, { row: rows[0], distance: Infinity }).row;
+}
+
+function axisLabel(parent, x, y, content, className) {
+  const groupEl = group(parent, `crosshair-label ${className}`);
+  const box = rect(groupEl, x, y, 1, 1, "crosshair-label-bg");
+  const label = text(groupEl, x, y, content, "crosshair-label-text");
+  box.setAttribute("rx", 4);
+  groupEl.__box = box;
+  groupEl.__label = label;
+  return groupEl;
+}
+
+function setAxisLabel(groupEl, x, y, content) {
+  const label = groupEl.__label;
+  const box = groupEl.__box;
+  const width = Math.max(52, content.length * 7 + 14);
+  const height = 22;
+  label.textContent = content;
+  if (groupEl.classList.contains("y-axis-value")) {
+    box.setAttribute("x", x);
+    box.setAttribute("y", y - height / 2);
+    box.setAttribute("width", width);
+    box.setAttribute("height", height);
+    label.setAttribute("x", x + 7);
+    label.setAttribute("y", y + 4);
+    label.setAttribute("text-anchor", "start");
+    return;
+  }
+  box.setAttribute("x", x - width / 2);
+  box.setAttribute("y", y - height / 2);
+  box.setAttribute("width", width);
+  box.setAttribute("height", height);
+  label.setAttribute("x", x);
+  label.setAttribute("y", y + 4);
+  label.setAttribute("text-anchor", "middle");
+}
+
+function showTooltip(event, html) {
+  tooltip.innerHTML = html;
+  tooltip.hidden = false;
+  const width = tooltip.offsetWidth || 210;
+  const height = tooltip.offsetHeight || 78;
+  const left = Math.min(window.innerWidth - width - 8, Math.max(8, event.clientX + 12));
+  const top = Math.min(window.innerHeight - height - 8, Math.max(8, event.clientY - height - 10));
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function formatUnit(value, unit) {
+  return isNum(value) ? `${fmt.format(value)}${unit}` : "--";
 }
 
 function formatPct(value) {

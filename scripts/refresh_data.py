@@ -295,7 +295,9 @@ def fetch_yahoo_monthly_yoy(symbol: str, start: str) -> pd.DataFrame:
 def post_to_worker(worker_url: str, token: str, payload: dict) -> None:
     endpoint = f"{worker_url.rstrip('/')}/api/ingest"
     response = requests.post(endpoint, json=payload, headers={"authorization": f"Bearer {token}"}, timeout=60)
-    response.raise_for_status()
+    if not response.ok:
+        body = response.text.strip().replace("\n", " ")[:500]
+        raise RuntimeError(f"POST {endpoint} failed with HTTP {response.status_code}: {body}")
     print(response.text)
 
 

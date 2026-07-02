@@ -20,6 +20,28 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Validate ingest configuration
+        run: |
+          test -n "$WORKER_URL"
+          test -n "$INGEST_TOKEN"
+          python - <<'PY'
+          import os
+          from urllib.parse import urlparse
+
+          parsed = urlparse(os.environ["WORKER_URL"])
+          if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+              raise SystemExit("WORKER_URL must be a full origin, for example https://name.account.workers.dev")
+          print(f"Posting to {parsed.scheme}://{parsed.netloc}/api/ingest")
+          PY
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          INGEST_TOKEN: ${{ secrets.INGEST_TOKEN }}
+
+      - name: Check Worker reachability
+        run: curl --fail-with-body --show-error --silent "$WORKER_URL/api/health"
+        env:
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+
       - name: Build and post data
         run: python scripts/refresh_data.py --worker-url "$WORKER_URL" --token "$INGEST_TOKEN"
         env:
